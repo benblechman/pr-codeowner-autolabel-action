@@ -13,8 +13,13 @@ inputs:
     default: CODEOWNERS
   labels-to-owners:
     description:
-      'Keys are labels to add, values are potential owners in CODEOWNERS'
+      'Keys are labels to add, values are potential owners in CODEOWNERS.  These are treated as overrides if enable-default-labels is true.  This input is required but it can be empty.'
     required: true
+  enable-default-labels:
+    description: 'If no labels-to-owners are provided, default labels will be added based on the team name.  The organization will be removed.'
+    required: false
+    type: boolean
+    default: false
 
 runs:
   using: node20

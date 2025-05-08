@@ -69,6 +69,11 @@ export async function getPullRequest(client: ClientType, prNumber: number) {
   }
 }
 
+export interface CodeownerEntry {
+  glob: string
+  teams: string[]
+}
+
 export async function getCodeowners(
   client: ClientType,
   prNumber: number,
@@ -96,30 +101,45 @@ export async function getCodeowners(
     )
     return []
   }
+  let codeowners = codeownersFrom(fileContent)
+  if (!codeowners.length) {
+    core.warning(`Pull request #${prNumber} has no codeowners`)
+  }
 
+  core.debug("codeowners: \n" + codeowners.map((entry) => { `glob: ${entry.glob} teams: ${entry.teams}`}))
+  return codeowners
+}
+
+export function codeownersFrom(fileContent: string) {
   // rm newlines & comments; convert to array of 2-tupes, <glob, team>
-  const codeowners: string[][] = fileContent
+  const codeowners: CodeownerEntry[] = fileContent
     .split(/\r?\n/)
-    .filter(l => l.trim().length > 0)
-    .filter(l => !l.startsWith('#'))
-    .map(l => l.split(' '))
-    .filter(([glob, ...teams]) => {
-      if (
-        teams.length === 0 ||
-        (teams.length === 1 && teams[0] === undefined)
-      ) {
-        core.warning(`CODEOWNERS had glob ${glob} w/o matching team`)
-        return false
+    .filter(line => line.trim().length > 0)
+    .filter(line => !line.startsWith('#'))
+    .map((line) : CodeownerEntry => {
+      let lineTokens = line.trim().split(/\s/).filter(token => { return token.length > 0 })
+      var glob = lineTokens[0]
+      var teams: string[] = []
+      if (lineTokens.length > 1) {
+        teams = lineTokens.slice(1, lineTokens.length)
       }
 
-      return true
+      core.debug(`Processing glob: ${glob} teams: ${teams}`)
+      if ( teams.length === 0 ||
+          (teams.length === 1 && teams[0] === undefined)) {
+        core.debug(`WARNING: CODEOWNERS had glob ${glob} w/o matching team`)
+      }
+      return { glob: glob, teams: teams }
     })
-    .map(([glob, ...teams]) => {
+    .map((entry) => {
       // do some munging to support CODEOWNER format globs
-      let finalGlob = glob
-
+      var finalGlob = entry.glob
+      if (finalGlob.startsWith('*')) {
+        // convert absolute paths like /foo/bar to foo/bar
+        finalGlob = "**/" + finalGlob
+      }
       // convert directories like foo/ to foo/**
-      if (finalGlob.endsWith('/')) {
+      if (finalGlob.endsWith('/')){
         finalGlob += '**'
       } else {
         // convert directories like foo to foo/**
@@ -128,15 +148,10 @@ export async function getCodeowners(
           finalGlob += '/**'
         }
       }
+      core.debug(`finalGlob: ${finalGlob} teams: ${entry.teams}`)
 
-      return teams.map(team => [finalGlob, team])
+      return { glob: finalGlob, teams: entry.teams } as CodeownerEntry
     })
-    .flat(1)
-
-  if (!codeowners.length) {
-    core.warning(`Pull request #${prNumber} has no codeowners`)
-    return []
-  }
-
   return codeowners
 }
+
